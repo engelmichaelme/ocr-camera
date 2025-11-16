@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure OCR Launcher</title>
+  <style>
+    html, body, iframe {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    iframe {
+      height: 100vh;
+      width: 100vw;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 
+  This iframe is hosted inside an HTTPS page,
+  so Chrome allows camera access inside it.
+-->
+
+<iframe
+  src="./ocr.html"
+  allow="camera; microphone; fullscreen"
+  allowfullscreen
+></iframe>
+
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Camera OCR</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    video, canvas { width: 100%; max-width: 400px; }
+  </style>
+</head>
+<body>
+  <h2>Camera OCR</h2>
+
+  <video id="video" autoplay playsinline></video><br>
+  <button onclick="capture()">Capture Photo</button><br><br>
+
+  <canvas id="canvas"></canvas>
+
+  <h3>OCR Output:</h3>
+  <pre id="output"></pre>
+
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const output = document.getElementById('output');
+
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => video.srcObject = stream)
+    .catch(err => alert("Camera access denied: " + err));
+
+  function capture() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+
+    const imgData = canvas.toDataURL('image/png');
+
+    Tesseract.recognize(imgData, 'eng', {
+      logger: m => console.log(m)
+    }).then(result => {
+      output.textContent = result.data.text.trim();
+    });
+  }
+</script>
+
+</body>
+</html>
