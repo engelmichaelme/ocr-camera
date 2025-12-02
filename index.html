@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Book Reader</title>
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <style>
+        @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap)');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        /* Custom video styling for aspect ratio and fitting */
+        #camera-feed {
+            object-fit: cover;
+            width: 100%;
+            max-height: 80vh;
+        }
+        #video-container {
+            width: 100%;
+            height: 100%;
+            max-height: 80vh;
+            overflow: hidden;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .text-area {
+            min-height: 150px;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 flex flex-col items-center min-h-screen">
+
+    <div class="max-w-xl w-full">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">📸 AI Book Reader</h1>
+        <p class="text-center text-gray-600 mb-8">Point your rear camera at a page and tap the capture button below to start reading.</p>
+
+        <!-- Video Feed & Captured Image Container -->
+        <div id="video-container" class="relative bg-gray-900 mb-6 flex justify-center items-center">
+            <video id="camera-feed" class="w-full h-full" autoplay playsinline></video>
+            <canvas id="canvas-capture" class="hidden"></canvas>
+            <img id="captured-image" class="w-full h-full hidden object-contain" alt="Captured book page">
+
+            <!-- Loading Indicator Overlay -->
+            <div id="loading-overlay" class="absolute inset-0 bg-black bg-opacity-70 flex flex-col justify-center items-center rounded-xl transition-opacity duration-300 opacity-0 pointer-events-none">
+                <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-white" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p id="loading-text" class="mt-4 text-white text-lg font-medium"></p>
+            </div>
+
+            <!-- Error Message Overlay -->
+            <div id="error-message" class="absolute inset-0 bg-red-800 bg-opacity-90 flex justify-center items-center p-4 rounded-xl hidden">
+                <p class="text-white text-center text-lg font-semibold">Error: Camera access required or device issue. Please ensure permissions are granted and the camera is functional.</p>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex flex-col space-y-4">
+            <button id="capture-button" class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white text-xl font-semibold rounded-xl shadow-lg transition duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
+                <span id="capture-text">Capture Photo & Read</span>
+            </button>
+            <button id="reset-button" class="w-full py-3 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-xl transition duration-300 focus:outline-none focus:ring-4 focus:ring-gray-400 focus:ring-opacity-50" disabled>
+                Restart Camera
+            </button>
+        </div>
+
+        <!-- Extracted Text Area -->
+        <h2 class="text-xl font-semibold text-gray-800 mt-8 mb-3">Extracted Text:</h2>
+        <div id="extracted-text" class="text-area text-gray-700">
+            Tap 'Capture Photo & Read' to extract text from your book.
+        </div>
+        
+    </div>
+
+    <audio id="audio-player" class="mt-6 w-full max-w-xl" controls></audio>
+    
+<script>
+    // --- API Setup ---
+    const apiKey = "";
+    const VISION_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+    
+    // --- DOM Elements ---
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('canvas-capture');
+    const capturedImage = document.getElementById('captured-image');
+    const captureButton = document.getElementById('capture-button');
+    const resetButton = document.getElementById('reset-button');
+    const extractedTextDiv = document.getElementById('extracted-text');
+    const audioPlayer = document.getElementById('audio-player');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
+    const errorMessage = document.getElementById('error-message');
+
+    let stream = null;
+
+    // --- Utility Functions ---
+
+    /** Converts base64 string to ArrayBuffer. */
+    const base64ToArrayBuffer = (base64) => {
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+    };
+
+    /** Converts signed PCM 16-bit audio data to a WAV Blob. */
+    const pcmToWav = (pcm16, sampleRate) => {
+        const numChannels = 1;
+        const bitsPerSample = 16;
+        const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+        const blockAlign = numChannels * (bitsPerSample / 8);
+        const dataSize = pcm16.byteLength;
+        const buffer = new ArrayBuffer(44 + dataSize);
+        const view = new DataView(buffer);
+
+        // RIFF chunk descriptor
+        writeString(view, 0, 'RIFF'); // ChunkID
+        view.setUint32(4, 36 + dataSize, true); // ChunkSize
+        writeString(view, 8, 'WAVE'); // Format
+
+        // FMT sub-chunk
+        writeString(view, 12, 'fmt '); // Subchunk1ID
+        view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+        view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
+        view.setUint16(22, numChannels, true); // NumChannels
+        view.setUint32(24, sampleRate, true); // SampleRate
+        view.setUint32(28, byteRate, true); // ByteRate
+        view.setUint16(32, blockAlign, true); // BlockAlign
+        view.setUint16(34, bitsPerSample, true); // BitsPerSample
+
+        // DATA sub-chunk
+        writeString(view, 36, 'data'); // Subchunk2ID
+        view.setUint32(40, dataSize, true); // Subchunk2Size
+
+        // Write PCM data
+        const pcmBytes = new Uint8Array(buffer, 44);
+        pcmBytes.set(new Uint8Array(pcm16.buffer));
+
+        return new Blob([buffer], { type: 'audio/wav' });
+    };
+
+    /** Writes a string to a DataView at a specific offset. */
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    /** Display loading state */
+    function showLoading(text) {
+        loadingText.textContent = text;
+        loadingOverlay.style.opacity = '1';
+        loadingOverlay.style.pointerEvents = 'auto';
+        captureButton.disabled = true;
+        resetButton.disabled = true;
+        audioPlayer.pause();
+        audioPlayer.removeAttribute('src');
+    }
+
+    /** Hide loading state */
+    function hideLoading() {
+        loadingOverlay.style.opacity = '0';
+        loadingOverlay.style.pointerEvents = 'none';
+        captureButton.disabled = false;
+        resetButton.disabled = false;
+    }
+
+    // --- Core Camera & Capture Logic ---
+
+    async function startCamera() {
+        showLoading("Starting camera...");
+        errorMessage.classList.add('hidden');
+        extractedTextDiv.textContent = 'Tap \'Capture Photo & Read\' to extract text from your book.';
+        audioPlayer.removeAttribute('src');
+
+        // Prefer environment (rear) camera on mobile
+        const constraints = {
+            video: {
+                facingMode: { exact: "environment" }
+            }
+        };
+
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            video.classList.remove('hidden');
+            capturedImage.classList.add('hidden');
+            
+            video.onloadedmetadata = () => {
+                video.play();
+                hideLoading();
+                captureButton.textContent = 'Capture Photo & Read';
+                captureButton.disabled = false;
+                resetButton.disabled = true;
+            };
+
+        } catch (err) {
+            // Fallback to any available camera if environment fails
+            try {
+                const fallbackConstraints = { video: true };
+                stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+                video.srcObject = stream;
+                video.classList.remove('hidden');
+                capturedImage.classList.add('hidden');
+
+                video.onloadedmetadata = () => {
+                    video.play();
+                    hideLoading();
+                    captureButton.textContent = 'Capture Photo & Read (Using Fallback Camera)';
+                    captureButton.disabled = false;
+                    resetButton.disabled = true;
+                };
+            } catch (fallbackError) {
+                console.error("Could not start camera:", fallbackError);
+                showError();
+            }
+        }
+    }
+
+    function stopCamera() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+    }
+
+    function showError() {
+        errorMessage.classList.remove('hidden');
+        loadingOverlay.style.opacity = '0';
+        loadingOverlay.style.pointerEvents = 'none';
+        captureButton.disabled = true;
+        resetButton.disabled = false;
+    }
+
+
+    // --- API Interactions ---
+
+    async function generateContent(url, payload, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status} ${response.statusText}`);
+                }
+                
+                return await response.json();
+
+            } catch (error) {
+                if (i < retries - 1) {
+                    const delay = Math.pow(2, i) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                    throw error;
+                }
+            }
+        }
+    }
+
+    /** Step 1: Capture image and convert to Base64 */
+    function captureImage() {
+        const context = canvas.getContext('2d');
+        
+        // Match canvas dimensions to video feed
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        // Draw the current video frame onto the canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert canvas image to Base64 dataURL (PNG)
+        const dataURL = canvas.toDataURL('image/png');
+        
+        // Display the captured image and hide the video feed
+        capturedImage.src = dataURL;
+        capturedImage.classList.remove('hidden');
+        video.classList.add('hidden');
+
+        // Stop the camera stream to save resources
+        stopCamera();
+
+        // Extract just the Base64 data part
+        return dataURL.split(',')[1];
+    }
+
+    /** Step 2: Use Gemini Vision for OCR */
+    async function performOcr(base64Image) {
+        showLoading("1/2. Reading text from image...");
+        
+        const systemPrompt = "You are a highly accurate Optical Character Recognition (OCR) model. Your task is to transcribe all text visible in the provided image of a book page. Return only the raw, complete text, without any introductory, summary, or concluding phrases.";
+        
+        const payload = {
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        { text: "Transcribe the text in the image. This is a page from a book." },
+                        {
+                            inlineData: {
+                                mimeType: "image/png",
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }
+            ],
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+        };
+        
+        try {
+            const result = await generateContent(VISION_API_URL, payload);
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "OCR failed to extract text.";
+            extractedTextDiv.textContent = text;
+            return text;
+        } catch (error) {
+            console.error("OCR API Error:", error);
+            extractedTextDiv.textContent = `Error during OCR: ${error.message}`;
+            throw new Error("Failed to read text using Gemini Vision.");
+        }
+    }
+
+    /** Step 3: Use Gemini TTS to generate and play audio */
+    async function readTextAloud(text) {
+        if (text === "OCR failed to extract text.") {
+            showLoading("OCR failed. Cannot generate audio.");
+            setTimeout(hideLoading, 3000);
+            return;
+        }
+
+        showLoading("2/2. Generating audio and playing...");
+
+        const payload = {
+            contents: [{
+                parts: [{ text: text }]
+            }],
+            generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                    voiceConfig: {
+                        // Using 'Kore' as a clear, firm reading voice.
+                        prebuiltVoiceConfig: { voiceName: "Kore" } 
+                    }
+                }
+            },
+            model: "gemini-2.5-flash-preview-tts"
+        };
+        
+        try {
+            const result = await generateContent(TTS_API_URL, payload);
+            const part = result?.candidates?.[0]?.content?.parts?.[0];
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
+                const sampleRateMatch = mimeType.match(/rate=(\d+)/);
+                const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000; // Default or extract rate
+                
+                const pcmData = base64ToArrayBuffer(audioData);
+                // API returns signed PCM16 audio data.
+                const pcm16 = new Int16Array(pcmData);
+                const wavBlob = pcmToWav(pcm16, sampleRate);
+                const audioUrl = URL.createObjectURL(wavBlob);
+                
+                audioPlayer.src = audioUrl;
+                audioPlayer.play().catch(e => console.error("Audio play failed:", e));
+                hideLoading();
+
+            } else {
+                throw new Error("Invalid or missing audio data from TTS API.");
+            }
+
+        } catch (error) {
+            console.error("TTS API Error:", error);
+            extractedTextDiv.textContent += `\n\nError during TTS: ${error.message}`;
+            hideLoading();
+        }
+    }
+
+
+    // --- Event Handlers ---
+
+    captureButton.addEventListener('click', async () => {
+        try {
+            // 1. Capture Image
+            const base64Image = captureImage();
+            
+            // 2. Perform OCR and get text
+            const text = await performOcr(base64Image);
+
+            // 3. Generate and play audio
+            await readTextAloud(text);
+
+        } catch (error) {
+            console.error("Full process failed:", error);
+            hideLoading();
+            showError();
+        }
+    });
+
+    resetButton.addEventListener('click', () => {
+        stopCamera();
+        audioPlayer.pause();
+        startCamera();
+    });
+
+    // Start the app on load
+    window.onload = startCamera;
+    
+</script>
+
+</body>
+</html>
+
