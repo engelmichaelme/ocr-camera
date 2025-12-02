@@ -3,429 +3,501 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Book Reader</title>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <title>Mobile Book Reader</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap)');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f4f7f9;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            /* Ensure full height for mobile viewports */
+            min-height: 100vh;
         }
-        /* Custom video styling for aspect ratio and fitting */
-        #camera-feed {
-            object-fit: cover;
-            width: 100%;
-            max-height: 80vh;
-        }
-        #video-container {
-            width: 100%;
-            height: 100%;
-            max-height: 80vh;
-            overflow: hidden;
-            border-radius: 1rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-        .text-area {
-            min-height: 150px;
-            background-color: #ffffff;
-            border-radius: 0.75rem;
+        .container-main {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
             padding: 1rem;
-            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
-            white-space: pre-wrap;
+            max-width: 600px;
+            margin: auto;
+        }
+        #video-feed {
+            /* Full width and dynamic height */
+            width: 100%;
+            height: auto;
+            max-height: 50vh; /* Limit max height for viewability */
+            object-fit: cover;
+            border: 4px solid #30363d;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            margin-bottom: 1rem;
+            background-color: #21262d;
+        }
+        #canvas-capture {
+            /* Hide the canvas, it's only used for processing */
+            display: none;
+        }
+        .styled-button {
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .styled-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(47, 128, 237, 0.4);
+        }
+        .styled-button:active {
+            transform: translateY(1px);
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #2f80ed;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Mobile-friendly large button */
+        .mobile-cta {
+            width: 90%;
+            padding: 1rem 0;
+            font-size: 1.25rem;
+        }
+        @media (min-width: 640px) {
+            .mobile-cta {
+                width: auto;
+                padding: 0.75rem 2rem;
+            }
         }
     </style>
-</head>
-<body class="p-4 md:p-8 flex flex-col items-center min-h-screen">
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <div class="max-w-xl w-full">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">📸 AI Book Reader</h1>
-        <p class="text-center text-gray-600 mb-8">Point your rear camera at a page and tap the capture button below to start reading.</p>
+        // Enable debug logging for Firebase
+        setLogLevel('debug');
 
-        <!-- Video Feed & Captured Image Container -->
-        <div id="video-container" class="relative bg-gray-900 mb-6 flex justify-center items-center">
-            <video id="camera-feed" class="w-full h-full" autoplay playsinline></video>
-            <canvas id="canvas-capture" class="hidden"></canvas>
-            <img id="captured-image" class="w-full h-full hidden object-contain" alt="Captured book page">
+        // Global variables provided by the environment (required boilerplate)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-            <!-- Loading Indicator Overlay -->
-            <div id="loading-overlay" class="absolute inset-0 bg-black bg-opacity-70 flex flex-col justify-center items-center rounded-xl transition-opacity duration-300 opacity-0 pointer-events-none">
-                <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-white" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p id="loading-text" class="mt-4 text-white text-lg font-medium"></p>
-            </div>
+        let app, db, auth;
 
-            <!-- Error Message Overlay -->
-            <div id="error-message" class="absolute inset-0 bg-red-800 bg-opacity-90 flex justify-center items-center p-4 rounded-xl hidden">
-                <p class="text-white text-center text-lg font-semibold">Error: Camera access required or device issue. Please ensure permissions are granted and the camera is functional.</p>
-            </div>
-        </div>
-
-        <!-- Controls -->
-        <div class="flex flex-col space-y-4">
-            <button id="capture-button" class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white text-xl font-semibold rounded-xl shadow-lg transition duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
-                <span id="capture-text">Capture Photo & Read</span>
-            </button>
-            <button id="reset-button" class="w-full py-3 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-xl transition duration-300 focus:outline-none focus:ring-4 focus:ring-gray-400 focus:ring-opacity-50" disabled>
-                Restart Camera
-            </button>
-        </div>
-
-        <!-- Extracted Text Area -->
-        <h2 class="text-xl font-semibold text-gray-800 mt-8 mb-3">Extracted Text:</h2>
-        <div id="extracted-text" class="text-area text-gray-700">
-            Tap 'Capture Photo & Read' to extract text from your book.
-        </div>
-        
-    </div>
-
-    <audio id="audio-player" class="mt-6 w-full max-w-xl" controls></audio>
-    
-<script>
-    // --- API Setup ---
-    const apiKey = "";
-    const VISION_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-    const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-    
-    // --- DOM Elements ---
-    const video = document.getElementById('camera-feed');
-    const canvas = document.getElementById('canvas-capture');
-    const capturedImage = document.getElementById('captured-image');
-    const captureButton = document.getElementById('capture-button');
-    const resetButton = document.getElementById('reset-button');
-    const extractedTextDiv = document.getElementById('extracted-text');
-    const audioPlayer = document.getElementById('audio-player');
-    const loadingOverlay = document.getElementById('loading-overlay');
-    const loadingText = document.getElementById('loading-text');
-    const errorMessage = document.getElementById('error-message');
-
-    let stream = null;
-
-    // --- Utility Functions ---
-
-    /** Converts base64 string to ArrayBuffer. */
-    const base64ToArrayBuffer = (base64) => {
-        const binaryString = atob(base64);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        return bytes.buffer;
-    };
-
-    /** Converts signed PCM 16-bit audio data to a WAV Blob. */
-    const pcmToWav = (pcm16, sampleRate) => {
-        const numChannels = 1;
-        const bitsPerSample = 16;
-        const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-        const blockAlign = numChannels * (bitsPerSample / 8);
-        const dataSize = pcm16.byteLength;
-        const buffer = new ArrayBuffer(44 + dataSize);
-        const view = new DataView(buffer);
-
-        // RIFF chunk descriptor
-        writeString(view, 0, 'RIFF'); // ChunkID
-        view.setUint32(4, 36 + dataSize, true); // ChunkSize
-        writeString(view, 8, 'WAVE'); // Format
-
-        // FMT sub-chunk
-        writeString(view, 12, 'fmt '); // Subchunk1ID
-        view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
-        view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
-        view.setUint16(22, numChannels, true); // NumChannels
-        view.setUint32(24, sampleRate, true); // SampleRate
-        view.setUint32(28, byteRate, true); // ByteRate
-        view.setUint16(32, blockAlign, true); // BlockAlign
-        view.setUint16(34, bitsPerSample, true); // BitsPerSample
-
-        // DATA sub-chunk
-        writeString(view, 36, 'data'); // Subchunk2ID
-        view.setUint32(40, dataSize, true); // Subchunk2Size
-
-        // Write PCM data
-        const pcmBytes = new Uint8Array(buffer, 44);
-        pcmBytes.set(new Uint8Array(pcm16.buffer));
-
-        return new Blob([buffer], { type: 'audio/wav' });
-    };
-
-    /** Writes a string to a DataView at a specific offset. */
-    function writeString(view, offset, string) {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
-    }
-
-    /** Display loading state */
-    function showLoading(text) {
-        loadingText.textContent = text;
-        loadingOverlay.style.opacity = '1';
-        loadingOverlay.style.pointerEvents = 'auto';
-        captureButton.disabled = true;
-        resetButton.disabled = true;
-        audioPlayer.pause();
-        audioPlayer.removeAttribute('src');
-    }
-
-    /** Hide loading state */
-    function hideLoading() {
-        loadingOverlay.style.opacity = '0';
-        loadingOverlay.style.pointerEvents = 'none';
-        captureButton.disabled = false;
-        resetButton.disabled = false;
-    }
-
-    // --- Core Camera & Capture Logic ---
-
-    async function startCamera() {
-        showLoading("Starting camera...");
-        errorMessage.classList.add('hidden');
-        extractedTextDiv.textContent = 'Tap \'Capture Photo & Read\' to extract text from your book.';
-        audioPlayer.removeAttribute('src');
-
-        // Prefer environment (rear) camera on mobile
-        const constraints = {
-            video: {
-                facingMode: { exact: "environment" }
-            }
-        };
-
-        try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
-            video.classList.remove('hidden');
-            capturedImage.classList.add('hidden');
-            
-            video.onloadedmetadata = () => {
-                video.play();
-                hideLoading();
-                captureButton.textContent = 'Capture Photo & Read';
-                captureButton.disabled = false;
-                resetButton.disabled = true;
-            };
-
-        } catch (err) {
-            // Fallback to any available camera if environment fails
+        window.firebaseReady = new Promise(async (resolve) => {
             try {
-                const fallbackConstraints = { video: true };
-                stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-                video.srcObject = stream;
-                video.classList.remove('hidden');
-                capturedImage.classList.add('hidden');
+                // 1. Initialize Firebase
+                if (Object.keys(firebaseConfig).length > 0) {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
 
-                video.onloadedmetadata = () => {
-                    video.play();
-                    hideLoading();
-                    captureButton.textContent = 'Capture Photo & Read (Using Fallback Camera)';
-                    captureButton.disabled = false;
-                    resetButton.disabled = true;
-                };
-            } catch (fallbackError) {
-                console.error("Could not start camera:", fallbackError);
-                showError();
-            }
-        }
-    }
+                    // 2. Sign In
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } else {
+                    console.error("Firebase config is missing. App will run without authentication/storage features.");
+                }
 
-    function stopCamera() {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            stream = null;
-        }
-    }
-
-    function showError() {
-        errorMessage.classList.remove('hidden');
-        loadingOverlay.style.opacity = '0';
-        loadingOverlay.style.pointerEvents = 'none';
-        captureButton.disabled = true;
-        resetButton.disabled = false;
-    }
-
-
-    // --- API Interactions ---
-
-    async function generateContent(url, payload, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                // 3. Resolve with auth status
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        console.log("User signed in:", user.uid);
+                        window.currentUserId = user.uid;
+                    } else {
+                        console.log("User signed out/anonymous.");
+                        window.currentUserId = crypto.randomUUID(); // Fallback ID
+                    }
+                    resolve({ db, auth, userId: window.currentUserId });
                 });
 
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status} ${response.statusText}`);
+            } catch (error) {
+                console.error("Firebase setup failed:", error);
+                window.currentUserId = crypto.randomUUID(); // Fallback ID
+                resolve({ db: null, auth: null, userId: window.currentUserId });
+            }
+        });
+    </script>
+</head>
+<body>
+
+    <div class="container-main">
+        <h1 class="text-2xl font-bold mt-4 mb-2 text-white">📖 Mobile Book Reader</h1>
+        <p class="text-sm mb-4 text-gray-400">Point your rear camera at a book page and tap "Read Text".</p>
+
+        <!-- Video Feed & Canvas for Capture -->
+        <video id="video-feed" autoplay playsinline muted></video>
+        <canvas id="canvas-capture"></canvas>
+
+        <!-- Main Button -->
+        <button id="capture-button" class="mobile-cta styled-button bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg flex items-center justify-center space-x-2" disabled>
+            <span id="button-text">Loading Camera...</span>
+            <div id="loading-spinner" class="loading-spinner hidden"></div>
+        </button>
+
+        <!-- Status & Transcribed Text Area -->
+        <div id="status-message" class="mt-4 text-yellow-400 font-semibold h-6"></div>
+        
+        <div class="mt-4 p-4 w-full bg-gray-800 rounded-xl shadow-inner">
+            <h2 class="text-lg font-semibold mb-2 text-white">Transcribed Text</h2>
+            <div id="transcribed-text" class="text-sm text-gray-300 whitespace-pre-wrap min-h-[5rem]">
+                <p>Text will appear here after capture.</p>
+            </div>
+        </div>
+
+        <!-- Audio Player -->
+        <audio id="audio-player" class="mt-4 w-full" controls></audio>
+        
+        <div id="error-box" class="hidden mt-4 p-3 w-full bg-red-800 text-red-200 rounded-lg">
+            <strong>Error:</strong> <span id="error-text"></span>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import necessary utility functions for TTS
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Function to convert PCM audio data (ArrayBuffer) to a WAV Blob
+        function pcmToWav(pcmData, sampleRate = 24000) {
+            const buffer = new ArrayBuffer(44 + pcmData.byteLength);
+            const view = new DataView(buffer);
+
+            function writeString(view, offset, str) {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
                 }
+            }
+
+            let offset = 0;
+
+            // RIFF chunk
+            writeString(view, offset, 'RIFF'); offset += 4;
+            view.setUint32(offset, 36 + pcmData.byteLength, true); offset += 4;
+            writeString(view, offset, 'WAVE'); offset += 4;
+
+            // 'fmt ' chunk
+            writeString(view, offset, 'fmt '); offset += 4;
+            view.setUint32(offset, 16, true); offset += 4;
+            view.setUint16(offset, 1, true); offset += 2; // PCM format
+            view.setUint16(offset, 1, true); offset += 2; // Mono
+            view.setUint32(offset, sampleRate, true); offset += 4;
+            view.setUint32(offset, sampleRate * 2, true); offset += 4; // Byte rate (16-bit PCM = 2 bytes/sample)
+            view.setUint16(offset, 2, true); offset += 2; // Block align
+            view.setUint16(offset, 16, true); offset += 2; // Bits per sample
+
+            // 'data' chunk
+            writeString(view, offset, 'data'); offset += 4;
+            view.setUint32(offset, pcmData.byteLength, true); offset += 4;
+
+            // Write PCM data
+            const pcmView = new DataView(pcmData);
+            for (let i = 0; i < pcmData.byteLength; i++) {
+                view.setUint8(offset + i, pcmView.getUint8(i));
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+        
+        // --- End of Utility Functions ---
+
+        const video = document.getElementById('video-feed');
+        const canvas = document.getElementById('canvas-capture');
+        const captureButton = document.getElementById('capture-button');
+        const buttonText = document.getElementById('button-text');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const statusMessage = document.getElementById('status-message');
+        const transcribedTextDiv = document.getElementById('transcribed-text');
+        const audioPlayer = document.getElementById('audio-player');
+        const errorBox = document.getElementById('error-box');
+        const errorText = document.getElementById('error-text');
+
+        let stream = null;
+        let isProcessing = false;
+
+        /**
+         * Initializes the camera feed using the rear-facing camera.
+         */
+        async function startCamera() {
+            try {
+                // Request access to video stream, preferring the environment (rear) camera
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "environment" 
+                    } 
+                });
+
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    
+                    // Once camera is ready, update UI
+                    captureButton.disabled = false;
+                    buttonText.textContent = 'Take Photo & Read Text';
+                    statusMessage.textContent = 'Camera ready. Frame the text clearly.';
+                };
+
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                showError("Could not access the rear camera. Check device permissions. Error: " + err.message);
+                buttonText.textContent = 'Camera Error';
+            }
+        }
+
+        /**
+         * Hides any previous errors.
+         */
+        function hideError() {
+            errorBox.classList.add('hidden');
+            errorText.textContent = '';
+        }
+
+        /**
+         * Displays an error message in the UI.
+         * @param {string} message - The error message to display.
+         */
+        function showError(message) {
+            errorText.textContent = message;
+            errorBox.classList.remove('hidden');
+            setLoading(false);
+        }
+
+        /**
+         * Sets the loading state of the app.
+         * @param {boolean} isLoading - Whether the app is currently processing.
+         * @param {string} [status] - Optional status message to display.
+         */
+        function setLoading(isLoading, status = '') {
+            isProcessing = isLoading;
+            captureButton.disabled = isLoading;
+            loadingSpinner.classList.toggle('hidden', !isLoading);
+            
+            if (isLoading) {
+                buttonText.textContent = 'Processing...';
+                statusMessage.textContent = status;
+                captureButton.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                captureButton.classList.add('bg-gray-500');
+            } else {
+                buttonText.textContent = 'Take Photo & Read Text';
+                statusMessage.textContent = status || 'Ready for next photo.';
+                captureButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                captureButton.classList.remove('bg-gray-500');
+            }
+        }
+
+        /**
+         * Step 1: Captures the image from the video feed.
+         * @returns {string | null} Base64 encoded JPEG data (without mime prefix), or null on failure.
+         */
+        function captureImage() {
+            if (!video.srcObject) {
+                showError("Camera is not active.");
+                return null;
+            }
+
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            canvas.width = w;
+            canvas.height = h;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, w, h);
+
+            // Get the Base64 data, removing the "data:image/jpeg;base64," prefix
+            const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+            return base64Image;
+        }
+
+        /**
+         * Step 2: Calls the Gemini API to transcribe the text from the image.
+         * @param {string} base64Image - Base64 image data.
+         * @returns {Promise<string>} The transcribed text.
+         */
+        async function transcribeImage(base64Image) {
+            const systemPrompt = "You are an expert OCR and transcription system. Your task is to accurately transcribe all visible text from the book page provided in the image. Do not add any commentary, explanations, or context. Output only the transcribed text.";
+            const userQuery = "Transcribe the text in this image.";
+            
+            const payload = {
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: userQuery },
+                            {
+                                inlineData: {
+                                    mimeType: "image/jpeg",
+                                    data: base64Image
+                                }
+                            }
+                        ]
+                    }
+                ],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+            
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            // Exponential backoff retry logic
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (!text) throw new Error("API returned an empty or malformed transcription.");
+                    
+                    return text.trim();
+                } catch (error) {
+                    if (i === 2) throw error; // Re-throw final error
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000)); // Wait 1s, 2s
+                }
+            }
+        }
+
+        /**
+         * Step 3: Calls the TTS API to generate audio from text and plays it.
+         * @param {string} text - The text to be spoken.
+         */
+        async function generateAndPlayAudio(text) {
+            const payload = {
+                contents: [{
+                    parts: [{ text: text }]
+                }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            // Using the 'Kore' voice for clear reading
+                            prebuiltVoiceConfig: { voiceName: "Kore" } 
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    const result = await response.json();
+                    const part = result?.candidates?.[0]?.content?.parts?.[0];
+                    const audioData = part?.inlineData?.data;
+                    const mimeType = part?.inlineData?.mimeType;
+
+                    if (!audioData || !mimeType || !mimeType.startsWith("audio/L16")) {
+                        throw new Error("TTS API returned invalid or missing audio data.");
+                    }
+                    
+                    // Assuming 24000 sample rate as default for the service
+                    const sampleRate = 24000;
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const wavBlob = pcmToWav(pcmData, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+
+                    audioPlayer.src = audioUrl;
+                    audioPlayer.play();
+                    
+                    return; // Success, exit retry loop
+                } catch (error) {
+                    if (i === 2) throw error; // Re-throw final error
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                }
+            }
+        }
+
+        /**
+         * Main execution function when the button is pressed.
+         */
+        async function processPhotoAndRead() {
+            if (isProcessing) return;
+            hideError();
+            
+            // 1. Capture Image
+            setLoading(true, '1/3 Capturing image...');
+            audioPlayer.pause();
+            audioPlayer.src = "";
+            transcribedTextDiv.textContent = 'Capturing...';
+            
+            const base64Image = captureImage();
+            if (!base64Image) return setLoading(false, 'Capture failed.');
+
+            try {
                 
-                return await response.json();
+                // 2. Transcribe Text
+                setLoading(true, '2/3 Transcribing text using Gemini...');
+                const transcribedText = await transcribeImage(base64Image);
+                
+                if (transcribedText.length < 5) {
+                    transcribedTextDiv.textContent = transcribedText;
+                    setLoading(false, 'Transcription successful, but text was too short to read aloud.');
+                    return;
+                }
+
+                transcribedTextDiv.textContent = transcribedText;
+
+                // 3. Generate and Play Audio
+                setLoading(true, '3/3 Generating audio and playing back...');
+                await generateAndPlayAudio(transcribedText);
+
+                setLoading(false, 'Reading complete! You can play the audio again below.');
 
             } catch (error) {
-                if (i < retries - 1) {
-                    const delay = Math.pow(2, i) * 1000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                } else {
-                    throw error;
-                }
+                console.error("Full Processing Error:", error);
+                showError("Processing failed: " + error.message);
+                setLoading(false, 'Process failed.');
+                transcribedTextDiv.textContent = 'Failed to transcribe or generate audio.';
             }
         }
-    }
 
-    /** Step 1: Capture image and convert to Base64 */
-    function captureImage() {
-        const context = canvas.getContext('2d');
-        
-        // Match canvas dimensions to video feed
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        
-        // Draw the current video frame onto the canvas
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // Convert canvas image to Base64 dataURL (PNG)
-        const dataURL = canvas.toDataURL('image/png');
-        
-        // Display the captured image and hide the video feed
-        capturedImage.src = dataURL;
-        capturedImage.classList.remove('hidden');
-        video.classList.add('hidden');
+        // Event Listeners
+        captureButton.addEventListener('click', processPhotoAndRead);
 
-        // Stop the camera stream to save resources
-        stopCamera();
-
-        // Extract just the Base64 data part
-        return dataURL.split(',')[1];
-    }
-
-    /** Step 2: Use Gemini Vision for OCR */
-    async function performOcr(base64Image) {
-        showLoading("1/2. Reading text from image...");
-        
-        const systemPrompt = "You are a highly accurate Optical Character Recognition (OCR) model. Your task is to transcribe all text visible in the provided image of a book page. Return only the raw, complete text, without any introductory, summary, or concluding phrases.";
-        
-        const payload = {
-            contents: [
-                {
-                    role: "user",
-                    parts: [
-                        { text: "Transcribe the text in the image. This is a page from a book." },
-                        {
-                            inlineData: {
-                                mimeType: "image/png",
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }
-            ],
-            systemInstruction: {
-                parts: [{ text: systemPrompt }]
-            },
-        };
-        
-        try {
-            const result = await generateContent(VISION_API_URL, payload);
-            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "OCR failed to extract text.";
-            extractedTextDiv.textContent = text;
-            return text;
-        } catch (error) {
-            console.error("OCR API Error:", error);
-            extractedTextDiv.textContent = `Error during OCR: ${error.message}`;
-            throw new Error("Failed to read text using Gemini Vision.");
-        }
-    }
-
-    /** Step 3: Use Gemini TTS to generate and play audio */
-    async function readTextAloud(text) {
-        if (text === "OCR failed to extract text.") {
-            showLoading("OCR failed. Cannot generate audio.");
-            setTimeout(hideLoading, 3000);
-            return;
-        }
-
-        showLoading("2/2. Generating audio and playing...");
-
-        const payload = {
-            contents: [{
-                parts: [{ text: text }]
-            }],
-            generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                    voiceConfig: {
-                        // Using 'Kore' as a clear, firm reading voice.
-                        prebuiltVoiceConfig: { voiceName: "Kore" } 
-                    }
-                }
-            },
-            model: "gemini-2.5-flash-preview-tts"
-        };
-        
-        try {
-            const result = await generateContent(TTS_API_URL, payload);
-            const part = result?.candidates?.[0]?.content?.parts?.[0];
-            const audioData = part?.inlineData?.data;
-            const mimeType = part?.inlineData?.mimeType;
-
-            if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
-                const sampleRateMatch = mimeType.match(/rate=(\d+)/);
-                const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000; // Default or extract rate
-                
-                const pcmData = base64ToArrayBuffer(audioData);
-                // API returns signed PCM16 audio data.
-                const pcm16 = new Int16Array(pcmData);
-                const wavBlob = pcmToWav(pcm16, sampleRate);
-                const audioUrl = URL.createObjectURL(wavBlob);
-                
-                audioPlayer.src = audioUrl;
-                audioPlayer.play().catch(e => console.error("Audio play failed:", e));
-                hideLoading();
-
-            } else {
-                throw new Error("Invalid or missing audio data from TTS API.");
-            }
-
-        } catch (error) {
-            console.error("TTS API Error:", error);
-            extractedTextDiv.textContent += `\n\nError during TTS: ${error.message}`;
-            hideLoading();
-        }
-    }
-
-
-    // --- Event Handlers ---
-
-    captureButton.addEventListener('click', async () => {
-        try {
-            // 1. Capture Image
-            const base64Image = captureImage();
+        // Initialization
+        window.onload = async () => {
+            // Wait for Firebase to be ready (boilerplate, but important for environment)
+            await window.firebaseReady;
             
-            // 2. Perform OCR and get text
-            const text = await performOcr(base64Image);
+            // Start the camera immediately
+            startCamera();
+        };
 
-            // 3. Generate and play audio
-            await readTextAloud(text);
-
-        } catch (error) {
-            console.error("Full process failed:", error);
-            hideLoading();
-            showError();
-        }
-    });
-
-    resetButton.addEventListener('click', () => {
-        stopCamera();
-        audioPlayer.pause();
-        startCamera();
-    });
-
-    // Start the app on load
-    window.onload = startCamera;
-    
-</script>
-
+    </script>
 </body>
 </html>
-
