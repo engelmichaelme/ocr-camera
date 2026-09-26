@@ -419,7 +419,7 @@
     startCamera();
   });
 
-  captureBtn.addEventListener('click', ()=>{
+  captureBtn.addEventListener('click', async ()=>{
     if(!stream) return;
     // Freeze the UI immediately so it can never appear stuck "live" —
     // this happens before anything else, synchronously, no async calls to hang on.
@@ -428,15 +428,41 @@
     captureBtn.style.display = 'none';
     retakeBtn.style.display = 'flex';
 
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(video, 0, 0, w, h);
-    shot.src = canvas.toDataURL('image/jpeg', 0.95);
+    function drawFromVideoElement(){
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(video, 0, 0, w, h);
+    }
 
+    let drawn = false;
+    if('ImageCapture' in window){
+      try{
+        const track = stream.getVideoTracks()[0];
+        const imageCapture = new ImageCapture(track);
+        // grabFrame() reads the already-decoded, correctly-oriented frame —
+        // unlike drawing the <video> element directly, which can grab raw,
+        // un-rotated sensor data on some Android/Chrome builds.
+        const bitmap = await Promise.race([
+          imageCapture.grabFrame(),
+          new Promise((_, reject)=> setTimeout(()=> reject(new Error('timeout')), 800))
+        ]);
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0);
+        drawn = true;
+      }catch(err){
+        console.warn('grabFrame failed or timed out, falling back to video frame', err);
+      }
+    }
+    if(!drawn) drawFromVideoElement();
+
+    shot.src = canvas.toDataURL('image/jpeg', 0.95);
     runOCR();
   });
 
