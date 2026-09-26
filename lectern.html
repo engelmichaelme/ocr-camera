@@ -27,10 +27,6 @@
     font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     -webkit-tap-highlight-color:transparent;
   }
-  @font-face{
-    font-family:'Source Serif';
-    src:local('Source Serif 4'), local('Georgia');
-  }
   .serif{ font-family:'Source Serif 4','Iowan Old Style',Georgia,serif; }
 
   #app{
@@ -45,11 +41,6 @@
   header{
     padding:28px 24px 18px;
     text-align:left;
-  }
-  header .mark{
-    display:inline-flex;
-    align-items:baseline;
-    gap:10px;
   }
   header h1{
     font-size:1.7rem;
@@ -302,7 +293,7 @@
     <div class="mark">
       <h1 class="serif">Lectern</h1>
     </div>
-    <p class="tagline">Point your camera at a page. Lectern reads it back to you.</p>
+    <p class="tagline">Point your camera at a page. Lectern reads it back to you — no account, nothing leaves your phone.</p>
   </header>
 
   <div class="stage" id="stage">
@@ -386,13 +377,11 @@
   const rateVal = document.getElementById('rateVal');
 
   let stream = null;
-  let facing = 'user'; // front-facing camera, as requested; flip button switches to rear
+  let facing = 'environment'; // rear camera by default; flip switches to front
   let utterance = null;
   let voices = [];
-  let boundaryTimer = null;
   let wordsTotal = 0;
   let wordsSpoken = 0;
-  let isPaused = false;
 
   function setStatus(msg, spinning){
     statusEl.innerHTML = spinning
@@ -405,7 +394,7 @@
     try{
       if(stream){ stream.getTracks().forEach(t=>t.stop()); }
       stream = await navigator.mediaDevices.getUserMedia({
-        video:{ facingMode: facing, width:{ideal:1280}, height:{ideal:1280} },
+        video:{ facingMode: facing, aspectRatio:{ideal: 3/4}, width:{ideal:1080}, height:{ideal:1440} },
         audio:false
       });
       video.srcObject = stream;
@@ -432,10 +421,8 @@
 
   captureBtn.addEventListener('click', async ()=>{
     if(!stream) return;
-    const track = stream.getVideoTracks()[0];
-    const settings = track.getSettings ? track.getSettings() : {};
-    const w = settings.width || video.videoWidth;
-    const h = settings.height || video.videoHeight;
+    const w = video.videoWidth;
+    const h = video.videoHeight;
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
@@ -569,7 +556,6 @@
   }
 
   function setPlayingUI(playing){
-    isPaused = !playing;
     playPause.innerHTML = playing
       ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>'
       : '<path d="M8 5v14l11-7z"/>';
