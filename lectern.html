@@ -419,41 +419,25 @@
     startCamera();
   });
 
-  captureBtn.addEventListener('click', async ()=>{
+  captureBtn.addEventListener('click', ()=>{
     if(!stream) return;
-    const track = stream.getVideoTracks()[0];
-    let captured = false;
-    if('ImageCapture' in window){
-      try{
-        const imageCapture = new ImageCapture(track);
-        const blob = await imageCapture.takePhoto();
-        const bitmap = await createImageBitmap(blob);
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(bitmap, 0, 0);
-        shot.src = canvas.toDataURL('image/jpeg', 0.95);
-        captured = true;
-      }catch(err){
-        console.warn('ImageCapture failed, falling back to video frame', err);
-      }
-    }
-    if(!captured){
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, w, h);
-      ctx.drawImage(video, 0, 0, w, h);
-      shot.src = canvas.toDataURL('image/jpeg', 0.95);
-    }
+    // Freeze the UI immediately so it can never appear stuck "live" —
+    // this happens before anything else, synchronously, no async calls to hang on.
     stage.classList.add('frozen');
     stageHint.style.display = 'none';
     captureBtn.style.display = 'none';
     retakeBtn.style.display = 'flex';
-    await runOCR();
+
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(video, 0, 0, w, h);
+    shot.src = canvas.toDataURL('image/jpeg', 0.95);
+
+    runOCR();
   });
 
   retakeBtn.addEventListener('click', ()=>{
