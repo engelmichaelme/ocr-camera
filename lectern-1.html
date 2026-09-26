@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lectern — read pages aloud</title>
+<style>
+  :root{
+    --ink:#1E2A22;
+    --paper:#F3EEE0;
+    --paper-dim:#E8E0CB;
+    --gold:#C09A5B;
+    --gold-dim:#8F7440;
+    --rust:#A2503E;
+    --charcoal:#2B2620;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    height:100%;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .serif{ font-family:'Source Serif 4','Iowan Old Style',Georgia,serif; }
+
+  #app{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+    padding:0 0 32px;
+    position:relative;
+  }
+
+  header{
+    padding:28px 24px 18px;
+    text-align:left;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+  }
+  header h1{
+    font-size:1.7rem;
+    margin:0;
+    font-weight:600;
+    letter-spacing:0.01em;
+  }
+  header .tagline{
+    margin:6px 0 0;
+    color:var(--paper-dim);
+    font-size:0.88rem;
+    opacity:0.75;
+    max-width:34ch;
+    line-height:1.4;
+  }
+  #settingsBtn{
+    width:38px;height:38px;border-radius:50%;
+    background:rgba(243,238,224,0.08);
+    border:1px solid rgba(243,238,224,0.2);
+    color:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    cursor:pointer;
+  }
+  #settingsBtn svg{ width:18px;height:18px; }
+  #settingsBtn.needs-key{ border-color:var(--gold); background:rgba(192,154,91,0.18); }
+
+  .stage{
+    margin:0 20px 18px;
+    border-radius:18px;
+    overflow:hidden;
+    position:relative;
+    background:#0e150f;
+    border:1px solid rgba(192,154,91,0.25);
+    aspect-ratio:3/4;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  #video, #shot{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  #shot{ display:none; }
+  .stage.frozen #video{ display:none; }
+  .stage.frozen #shot{ display:block; }
+
+  .stage-hint{
+    position:absolute;
+    inset:auto 0 0 0;
+    padding:10px 14px;
+    font-size:0.78rem;
+    text-align:center;
+    color:var(--paper);
+    background:linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+    letter-spacing:0.02em;
+  }
+
+  .stage-off{
+    padding:32px 24px;
+    text-align:center;
+    color:var(--paper-dim);
+  }
+  .stage-off .serif{ font-size:1.1rem; display:block; margin-bottom:8px; color:var(--paper); }
+  .stage-off button{ margin-top:14px; }
+
+  .controls-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:22px;
+    margin:4px 20px 26px;
+  }
+
+  .btn-icon{
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid rgba(243,238,224,0.25);
+    background:rgba(243,238,224,0.06);
+    color:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .btn-icon svg{ width:20px;height:20px; }
+  .btn-icon:active{ background:rgba(243,238,224,0.15); }
+
+  #capture{
+    width:72px;height:72px;border-radius:50%;
+    border:3px solid var(--paper);
+    background:var(--gold);
+    box-shadow:0 0 0 4px rgba(192,154,91,0.18);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #capture:active{ transform:scale(0.96); }
+  #capture svg{ width:26px;height:26px; }
+  #capture:disabled{ opacity:0.4; }
+
+  button{ font-family:inherit; font-size:0.95rem; border:none; cursor:pointer; }
+  .btn-primary{
+    background:var(--gold); color:var(--ink);
+    padding:12px 22px; border-radius:999px; font-weight:600;
+  }
+  .btn-primary:disabled{ opacity:0.5; }
+  .btn-ghost{
+    background:transparent; color:var(--paper);
+    border:1px solid rgba(243,238,224,0.35);
+    padding:11px 20px; border-radius:999px;
+  }
+
+  section.panel{
+    margin:0 20px 22px;
+    background:var(--paper);
+    color:var(--charcoal);
+    border-radius:16px;
+    padding:20px;
+  }
+  section.panel h2{
+    font-size:0.72rem; text-transform:uppercase; letter-spacing:0.09em;
+    margin:0 0 12px; color:var(--gold-dim); font-weight:700;
+  }
+
+  #status{
+    margin:0 20px 14px;
+    font-size:0.85rem;
+    color:var(--paper-dim);
+    min-height:1.1em;
+    display:flex; align-items:center; gap:8px;
+  }
+  #status.warn{ color:#e0b98a; }
+  .spinner{
+    width:14px;height:14px;border-radius:50%;
+    border:2px solid rgba(243,238,224,0.25);
+    border-top-color:var(--gold);
+    animation:spin 0.8s linear infinite;
+    flex-shrink:0;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  #textArea{
+    width:100%; min-height:140px; resize:vertical;
+    border:1px solid rgba(43,38,32,0.15); border-radius:10px;
+    padding:12px;
+    font-family:'Source Serif 4',Georgia,serif;
+    font-size:1.02rem; line-height:1.55;
+    color:var(--charcoal); background:#fffdf7;
+  }
+  #textArea:focus{ outline:2px solid var(--gold); outline-offset:1px; }
+
+  .playbar{ display:flex; align-items:center; gap:14px; margin-top:16px; }
+  #playPauseBtn{
+    width:52px;height:52px;border-radius:50%;
+    background:var(--ink); color:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  #playPauseBtn:disabled{ opacity:0.4; }
+  #playPauseBtn svg{ width:20px;height:20px; }
+
+  .progress-wrap{ flex:1; }
+  #progress{ width:100%; accent-color:var(--gold-dim); }
+  .word-count{ font-size:0.75rem; color:#7a7263; margin-top:2px; }
+
+  .field{ margin-top:16px; }
+  .field label{ display:block; font-size:0.78rem; color:#5c5548; margin-bottom:6px; }
+  select, input[type=range], input[type=password]{ width:100%; }
+  select, input[type=password]{
+    padding:9px 10px; border-radius:8px;
+    border:1px solid rgba(43,38,32,0.2);
+    background:#fffdf7; color:var(--charcoal);
+    font-size:0.92rem; font-family:inherit;
+  }
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .slider-label{ display:flex; justify-content:space-between; font-size:0.78rem; color:#5c5548; margin-bottom:6px; }
+
+  canvas{ display:none; }
+
+  footer{
+    margin:auto 20px 0; padding-top:10px;
+    font-size:0.72rem; color:rgba(243,238,224,0.4); text-align:center;
+  }
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55);
+    display:none; align-items:flex-end; justify-content:center;
+    z-index:50;
+  }
+  .overlay.open{ display:flex; }
+  .sheet{
+    width:100%; max-width:480px;
+    background:var(--paper); color:var(--charcoal);
+    border-radius:20px 20px 0 0;
+    padding:24px 22px 28px;
+    max-height:85vh; overflow-y:auto;
+  }
+  .sheet h2{ margin:0 0 6px; font-size:1.15rem; }
+  .sheet p{ font-size:0.85rem; color:#5c5548; line-height:1.5; margin:0 0 16px; }
+  .sheet p a{ color:var(--gold-dim); }
+  .sheet .field label{ font-size:0.8rem; }
+  .sheet-actions{ display:flex; gap:10px; margin-top:18px; }
+  .sheet-actions .btn-primary{ flex:1; }
+  .sheet-close-row{ display:flex; justify-content:flex-end; margin-bottom:4px; }
+  .sheet-close-row button{ background:none; color:#8a8371; font-size:0.85rem; }
+
+  @media (prefers-reduced-motion: reduce){ .spinner{ animation:none; } }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div>
+      <h1 class="serif">Lectern</h1>
+      <p class="tagline">Point your camera at a page. Lectern reads it back to you.</p>
+    </div>
+    <button id="settingsBtn" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="stage-off" id="stageOff">
+      <span class="serif">Ready when you are</span>
+      Turn on the camera to capture a page.
+      <div><button class="btn-primary" id="startCam">Turn on camera</button></div>
+    </div>
+    <video id="video" playsinline muted autoplay style="display:none"></video>
+    <img id="shot" alt="Captured page">
+    <div class="stage-hint" id="stageHint" style="display:none">Fill the frame with the page, hold steady</div>
+  </div>
+
+  <div class="controls-row" id="controlsRow" style="display:none">
+    <button class="btn-icon" id="flipCam" title="Switch camera" aria-label="Switch camera">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+    </button>
+    <button id="capture" title="Capture page" aria-label="Capture page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1E2A22" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>
+    </button>
+    <button class="btn-icon" id="retake" title="Retake" aria-label="Retake" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+    </button>
+  </div>
+
+  <div id="status"></div>
+
+  <section class="panel" id="textPanel" style="display:none">
+    <h2>What Lectern read</h2>
+    <textarea id="textArea" placeholder="Extracted text will appear here — feel free to fix anything before playing it back."></textarea>
+    <div class="word-count" id="wordCount"></div>
+
+    <div class="playbar">
+      <button id="playPauseBtn" aria-label="Play">
+        <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div class="progress-wrap">
+        <input type="range" id="progress" min="0" max="100" value="0">
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="field">
+        <label for="voiceSelect">Voice</label>
+        <select id="voiceSelect"><option>Add API key in Settings</option></select>
+      </div>
+      <div class="field">
+        <div class="slider-label"><span>Speed</span><span id="rateVal">0.95×</span></div>
+        <input type="range" id="rate" min="0.6" max="1.4" step="0.05" value="0.95">
+      </div>
+    </div>
+  </section>
+
+  <footer>Pages and text are sent to Google Cloud for reading and voice — see Settings for your key.</footer>
+</div>
+
+<canvas id="canvas"></canvas>
+<audio id="player" style="display:none"></audio>
+
+<div class="overlay" id="overlay">
+  <div class="sheet">
+    <div class="sheet-close-row"><button id="closeSheet">Close</button></div>
+    <h2 class="serif">Google Cloud API key</h2>
+    <p>
+      Lectern uses your own Google Cloud key to call the Vision API (for reading pages) and the Text-to-Speech API (for the voice). Create a key in the
+      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>,
+      enable the <strong>Cloud Vision API</strong> and <strong>Cloud Text-to-Speech API</strong> on that project, then paste the key below.
+      It's stored only in this browser, never sent anywhere but Google. Since it lives in this page's code, restrict the key
+      to those two APIs and to this site's URL under the key's settings.
+    </p>
+    <div class="field">
+      <label for="apiKeyInput">API key</label>
+      <input type="password" id="apiKeyInput" placeholder="AIza…" autocomplete="off">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn-ghost" id="clearKey">Remove key</button>
+      <button class="btn-primary" id="saveKey">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const stage = document.getElementById('stage');
+  const stageOff = document.getElementById('stageOff');
+  const stageHint = document.getElementById('stageHint');
+  const video = document.getElementById('video');
+  const shot = document.getElementById('shot');
+  const canvas = document.getElementById('canvas');
+  const startCam = document.getElementById('startCam');
+  const controlsRow = document.getElementById('controlsRow');
+  const captureBtn = document.getElementById('capture');
+  const retakeBtn = document.getElementById('retake');
+  const flipBtn = document.getElementById('flipCam');
+  const statusEl = document.getElementById('status');
+  const textPanel = document.getElementById('textPanel');
+  const textArea = document.getElementById('textArea');
+  const wordCount = document.getElementById('wordCount');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const playIcon = document.getElementById('playIcon');
+  const progress = document.getElementById('progress');
+  const voiceSelect = document.getElementById('voiceSelect');
+  const rateInput = document.getElementById('rate');
+  const rateVal = document.getElementById('rateVal');
+  const player = document.getElementById('player');
+
+  const settingsBtn = document.getElementById('settingsBtn');
+  const overlay = document.getElementById('overlay');
+  const closeSheet = document.getElementById('closeSheet');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const saveKey = document.getElementById('saveKey');
+  const clearKey = document.getElementById('clearKey');
+
+  const KEY_STORAGE = 'lectern_gcp_key';
+  let apiKey = localStorage.getItem(KEY_STORAGE) || '';
+
+  let stream = null;
+  let facing = 'environment'; // rear camera by default; flip switches to front
+  let voices = [];
+
+  // playback state
+  let chunks = [];
+  let audioCache = [];   // dataURI per chunk, or 'loading'/'error'
+  let currentChunk = 0;
+  let isPlaying = false;
+  let playRequestToken = 0; // invalidate stale async work on retake/replay
+
+  function setStatus(msg, spinning, warn){
+    statusEl.className = warn ? 'warn' : '';
+    statusEl.innerHTML = spinning
+      ? '<span class="spinner"></span><span>'+msg+'</span>'
+      : (msg ? '<span>'+msg+'</span>' : '');
+  }
+
+  function refreshKeyBadge(){
+    settingsBtn.classList.toggle('needs-key', !apiKey);
+  }
+  refreshKeyBadge();
+
+  // --- Settings sheet ---
+  settingsBtn.addEventListener('click', ()=>{
+    apiKeyInput.value = apiKey;
+    overlay.classList.add('open');
+  });
+  closeSheet.addEventListener('click', ()=> overlay.classList.remove('open'));
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) overlay.classList.remove('open'); });
+  saveKey.addEventListener('click', ()=>{
+    apiKey = apiKeyInput.value.trim();
+    localStorage.setItem(KEY_STORAGE, apiKey);
+    refreshKeyBadge();
+    overlay.classList.remove('open');
+    if(apiKey) loadVoices();
+  });
+  clearKey.addEventListener('click', ()=>{
+    apiKey = '';
+    localStorage.removeItem(KEY_STORAGE);
+    apiKeyInput.value = '';
+    refreshKeyBadge();
+    voiceSelect.innerHTML = '<option>Add API key in Settings</option>';
+  });
+
+  // --- Camera ---
+  async function startCamera(){
+    setStatus('Asking for camera access…', true);
+    try{
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode: facing, aspectRatio:{ideal: 3/4}, width:{ideal:1080}, height:{ideal:1440} },
+        audio:false
+      });
+      video.srcObject = stream;
+      video.style.display = 'block';
+      stage.classList.remove('frozen');
+      stageOff.style.display = 'none';
+      stageHint.style.display = 'block';
+      controlsRow.style.display = 'flex';
+      captureBtn.style.display = 'flex';
+      retakeBtn.style.display = 'none';
+      setStatus('');
+    }catch(err){
+      console.error(err);
+      setStatus('Camera access was blocked or unavailable. Check your browser\'s site permissions and try again.', false, true);
+    }
+  }
+  startCam.addEventListener('click', startCamera);
+  flipBtn.addEventListener('click', ()=>{
+    facing = (facing === 'user') ? 'environment' : 'user';
+    startCamera();
+  });
+
+  captureBtn.addEventListener('click', async ()=>{
+    if(!stream) return;
+    if(!apiKey){
+      setStatus('Add your Google Cloud API key in Settings first.', false, true);
+      overlay.classList.add('open');
+      return;
+    }
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+    shot.src = canvas.toDataURL('image/jpeg', 0.92);
+    stage.classList.add('frozen');
+    stageHint.style.display = 'none';
+    captureBtn.style.display = 'none';
+    retakeBtn.style.display = 'flex';
+    await runOCR();
+  });
+
+  retakeBtn.addEventListener('click', ()=>{
+    stopPlayback();
+    stage.classList.remove('frozen');
+    stageHint.style.display = 'block';
+    captureBtn.style.display = 'flex';
+    retakeBtn.style.display = 'none';
+    textPanel.style.display = 'none';
+    setStatus('');
+  });
+
+  // --- OCR via Google Cloud Vision ---
+  async function runOCR(){
+    setStatus('Reading the page…', true);
+    try{
+      const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+      const res = await fetch('https://vision.googleapis.com/v1/images:annotate?key=' + encodeURIComponent(apiKey), {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          requests:[{
+            image:{ content: base64 },
+            features:[{ type:'DOCUMENT_TEXT_DETECTION' }]
+          }]
+        })
+      });
+      const data = await res.json();
+      if(!res.ok || (data.responses && data.responses[0] && data.responses[0].error)){
+        const msg = (data.error && data.error.message) || (data.responses[0].error && data.responses[0].error.message) || 'Request failed.';
+        throw new Error(msg);
+      }
+      const annotation = data.responses && data.responses[0] && data.responses[0].fullTextAnnotation;
+      let text = annotation ? annotation.text.trim() : '';
+      if(!text){
+        setStatus('No text found on that page. Try filling the frame more or holding steadier.', false, true);
+        textPanel.style.display = 'none';
+        return;
+      }
+      textArea.value = text;
+      updateWordCount();
+      textPanel.style.display = 'block';
+      setStatus('Done — review the text below, then press play.', false);
+    }catch(err){
+      console.error(err);
+      setStatus('Vision API error: ' + err.message + ' — check your key and that Cloud Vision is enabled.', false, true);
+    }
+  }
+
+  textArea.addEventListener('input', ()=>{
+    updateWordCount();
+    resetPlayback();
+  });
+  function updateWordCount(){
+    const words = textArea.value.trim().split(/\s+/).filter(Boolean);
+    wordCount.textContent = words.length + (words.length === 1 ? ' word' : ' words');
+  }
+
+  // --- Voices (Google Cloud TTS) ---
+  async function loadVoices(){
+    if(!apiKey) return;
+    try{
+      const res = await fetch('https://texttospeech.googleapis.com/v1/voices?key=' + encodeURIComponent(apiKey) + '&languageCode=en');
+      const data = await res.json();
+      if(!res.ok) throw new Error((data.error && data.error.message) || 'Could not load voices.');
+      voices = (data.voices || []).filter(v => v.languageCodes.some(c => c.startsWith('en')));
+      voices.sort((a,b)=> rank(a) - rank(b) || a.name.localeCompare(b.name));
+      voiceSelect.innerHTML = '';
+      voices.forEach(v=>{
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        const region = v.languageCodes[0];
+        const type = v.name.includes('Studio') ? 'Studio' : v.name.includes('Neural2') ? 'Neural2' : v.name.includes('Wavenet') ? 'WaveNet' : 'Standard';
+        opt.textContent = region + ' · ' + type + ' · ' + (v.ssmlGender === 'FEMALE' ? 'Female' : v.ssmlGender === 'MALE' ? 'Male' : 'Voice');
+        voiceSelect.appendChild(opt);
+      });
+      // Prefer a US English Neural2/Studio female-or-male natural voice as default
+      const preferred = voices.find(v => v.languageCodes[0] === 'en-US' && (v.name.includes('Studio') || v.name.includes('Neural2')));
+      if(preferred) voiceSelect.value = preferred.name;
+    }catch(err){
+      console.error(err);
+      voiceSelect.innerHTML = '<option>Could not load voices</option>';
+    }
+  }
+  function rank(v){
+    if(v.name.includes('Studio')) return 0;
+    if(v.name.includes('Neural2')) return 1;
+    if(v.name.includes('Wavenet')) return 2;
+    return 3;
+  }
+  if(apiKey) loadVoices();
+
+  rateInput.addEventListener('input', ()=>{
+    rateVal.textContent = parseFloat(rateInput.value).toFixed(2)+'×';
+  });
+  rateInput.addEventListener('change', resetPlayback);
+  voiceSelect.addEventListener('change', resetPlayback);
+
+  // --- Text chunking (Cloud TTS caps input around 5000 bytes) ---
+  function chunkText(text){
+    const maxLen = 1500;
+    const sentences = text.replace(/\s+/g,' ').trim().match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [text];
+    const result = [];
+    let buf = '';
+    sentences.forEach(s=>{
+      if((buf + s).length > maxLen && buf){
+        result.push(buf.trim());
+        buf = s;
+      } else {
+        buf += s;
+      }
+    });
+    if(buf.trim()) result.push(buf.trim());
+    return result;
+  }
+
+  function resetPlayback(){
+    stopPlayback();
+    chunks = [];
+    audioCache = [];
+    currentChunk = 0;
+    progress.value = 0;
+  }
+
+  function stopPlayback(){
+    player.pause();
+    isPlaying = false;
+    playRequestToken++;
+    setPlayIcon(false);
+  }
+
+  function setPlayIcon(playing){
+    playIcon.innerHTML = playing
+      ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>'
+      : '<path d="M8 5v14l11-7z"/>';
+    playPauseBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  }
+
+  async function synthChunk(text){
+    const res = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize?key=' + encodeURIComponent(apiKey), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        input:{ text },
+        voice:{
+          languageCode: (voices.find(v=>v.name===voiceSelect.value) || {languageCodes:['en-US']}).languageCodes[0],
+          name: voiceSelect.value
+        },
+        audioConfig:{ audioEncoding:'MP3', speakingRate: parseFloat(rateInput.value) }
+      })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error((data.error && data.error.message) || 'Speech request failed.');
+    return 'data:audio/mp3;base64,' + data.audioContent;
+  }
+
+  async function ensureChunk(i, token){
+    if(audioCache[i] && audioCache[i] !== 'error') return audioCache[i];
+    audioCache[i] = 'loading';
+    try{
+      const uri = await synthChunk(chunks[i]);
+      if(token !== playRequestToken) return null; // superseded
+      audioCache[i] = uri;
+      return uri;
+    }catch(err){
+      audioCache[i] = 'error';
+      if(token === playRequestToken){
+        setStatus('Text-to-Speech error: ' + err.message, false, true);
+      }
+      throw err;
+    }
+  }
+
+  async function playFromChunk(i){
+    const token = playRequestToken;
+    try{
+      setStatus(audioCache[i] ? '' : 'Generating voice…', !audioCache[i]);
+      const uri = await ensureChunk(i, token);
+      if(token !== playRequestToken || uri === null) return;
+      currentChunk = i;
+      player.src = uri;
+      await player.play();
+      isPlaying = true;
+      setPlayIcon(true);
+      setStatus('');
+      // prefetch next chunk in background
+      if(i + 1 < chunks.length) ensureChunk(i+1, token).catch(()=>{});
+    }catch(err){
+      isPlaying = false;
+      setPlayIcon(false);
+    }
+  }
+
+  player.addEventListener('timeupdate', ()=>{
+    if(!chunks.length || !player.duration) return;
+    const within = player.currentTime / player.duration;
+    const pct = ((currentChunk + within) / chunks.length) * 100;
+    progress.value = Math.min(100, pct);
+  });
+
+  player.addEventListener('ended', ()=>{
+    if(currentChunk + 1 < chunks.length){
+      playFromChunk(currentChunk + 1);
+    } else {
+      isPlaying = false;
+      setPlayIcon(false);
+      progress.value = 100;
+    }
+  });
+
+  playPauseBtn.addEventListener('click', async ()=>{
+    if(!apiKey){
+      setStatus('Add your Google Cloud API key in Settings first.', false, true);
+      overlay.classList.add('open');
+      return;
+    }
+    const text = textArea.value.trim();
+    if(!text) return;
+
+    if(isPlaying){
+      player.pause();
+      isPlaying = false;
+      setPlayIcon(false);
+      return;
+    }
+    if(player.src && player.currentTime > 0 && !player.ended){
+      await player.play();
+      isPlaying = true;
+      setPlayIcon(true);
+      return;
+    }
+    // fresh start
+    if(!chunks.length) chunks = chunkText(text);
+    playRequestToken++;
+    await playFromChunk(0);
+  });
+
+  window.addEventListener('beforeunload', ()=>{ player.pause(); });
+})();
+</script>
+</body>
+</html>
